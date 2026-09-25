@@ -9,7 +9,12 @@ app.secret_key = "secure_otp_session_key_2026"
 
 USER_NAME = "Accszone3"
 API_KEY = "Tm5vM1NPMmRVR0NVUndpWFNZUW9QT09"
-BASE_URL = "https://durianrcs.com"
+
+API_ROUTERS = [
+    "https://durianrcs.com",
+    "https://durianrcs.com",
+    "https://durianrcs.com"
+]
 
 def init_db():
     conn = sqlite3.connect('database.db')
@@ -78,8 +83,8 @@ def dashboard():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
     cursor.execute("SELECT credits FROM users WHERE username = ?", (session['username'],))
-    credits_row = cursor.fetchone()
-    credits = credits_row[0] if credits_row else 0
+    user_data = cursor.fetchone()
+    credits = user_data[0] if user_data else 0
     cursor.execute("SELECT phone, pid, otp, status FROM history WHERE username = ? ORDER BY id DESC", (session['username'],))
     history_data = cursor.fetchall()
     conn.close()
@@ -96,53 +101,48 @@ def get_number():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
     cursor.execute("SELECT credits FROM users WHERE username = ?", (session['username'],))
-    user_row = cursor.fetchone()
-    user_credits = user_row[0] if user_row else 0
+    user_data = cursor.fetchone()
+    user_credits = user_data[0] if user_data else 0
     
     if user_credits < cost:
         conn.close()
-        return jsonify({"status": "error", "message": "Insufficient credits"})
+        return jsonify({"status": "error", "message": "Insufficient credits balance"})
         
-    api_url = f"{BASE_URL}/getMobile?name={USER_NAME}&ApiKey={API_KEY}&cuy={cuy}&pid={pid}&num=1&noblack=0&serial=2"
+    endpoint = f"/getMobile?name={USER_NAME}&ApiKey={API_KEY}&cuy={cuy}&pid={pid}&num=1&noblack=0&serial=2"
     
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache'
     }
     
-    try:
-        response = requests.get(api_url, headers=headers, timeout=20)
-        res_data = response.json()
-        response_code = res_data.get('code')
-        
-        if response_code == 200 or str(response_code) == '200':
-            raw_data = res_data.get('data')
-            phone = None
+    res_data = None
+    for base_url in API_ROUTERS:
+        try:
+            response = requests.get(base_url + endpoint, headers=headers, timeout=12)
+            if response.status_code == 200:
+                res_data = response.json()
+                break
+        except:
+            continue
             
-            if isinstance(raw_data, list):
-                if len(raw_data) > 0:
-                    phone = raw_data[0]
-            else:
-                phone = raw_data
-                
-            if phone:
-                new_credits = user_credits - cost
-                cursor.execute("UPDATE users SET credits = ? WHERE username = ?", (new_credits, session['username']))
-                cursor.execute("INSERT INTO history (username, phone, pid, otp, status, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                               (session['username'], str(phone), pid, 'Waiting...', 'Pending', str(time.time())))
-                conn.commit()
-                conn.close()
-                return jsonify({"status": "success", "number": phone, "pid": pid, "new_credits": new_credits})
-            else:
-                conn.close()
-                return jsonify({"status": "error", "message": "Number list is empty"})
-        else:
+    if res_data and (res_data.get('code') == 200 or str(res_data.get('code')) == '200'):
+        raw_phone = res_data.get('data')
+        phone = raw_phone if not isinstance(raw_phone, list) else (raw_phone[0] if len(raw_phone) > 0 else None)
+        
+        if phone:
+            new_credits = user_credits - cost
+            cursor.execute("UPDATE users SET credits = ? WHERE username = ?", (new_credits, session['username']))
+            cursor.execute("INSERT INTO history (username, phone, pid, otp, status, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                           (session['username'], str(phone), pid, 'Waiting...', 'Pending', str(time.time())))
+            conn.commit()
             conn.close()
-            error_msg = res_data.get('msg', f'Error Code {response_code}')
-            return jsonify({"status": "error", "message": str(error_msg)})
-    except Exception as e:
-        conn.close()
-        return jsonify({"status": "error", "message": "Connection Timeout"})
+            return jsonify({"status": "success", "number": phone, "pid": pid, "new_credits": new_credits})
+            
+    conn.close()
+    err_msg = res_data.get('msg') if res_data else "Supplier Blocked Connection"
+    return jsonify({"status": "error", "message": f"{err_msg}"})
 
 @app.route('/api/check-otp')
 def check_otp():
@@ -151,24 +151,29 @@ def check_otp():
     phone = request.args.get('phone')
     pid = request.args.get('pid')
     
-    api_url = f"{BASE_URL}/getMsg?name={USER_NAME}&ApiKey={API_KEY}&pn={phone}&pid={pid}&serial=2"
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    endpoint = f"/getMsg?name={USER_NAME}&ApiKey={API_KEY}&pn={phone}&pid={pid}&serial=2"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     
     for _ in range(24):
-        try:
-            response = requests.get(api_url, headers=headers, timeout=15)
-            res_data = response.json()
-            if res_data.get('code') == 200 or str(res_data.get('code')) == '200':
-                otp_code = res_data.get('data')
-                conn = sqlite3.connect('database.db')
-                cursor = conn.cursor()
-                cursor.execute("UPDATE history SET otp = ?, status = 'Success' WHERE username = ? AND phone = ?", 
-                               (str(otp_code), session['username'], phone))
-                conn.commit()
-                conn.close()
-                return jsonify({"status": "received", "otp": otp_code})
-        except:
-            pass
+        res_data = None
+        for base_url in API_ROUTERS:
+            try:
+                response = requests.get(base_url + endpoint, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    res_data = response.json()
+                    break
+            except:
+                continue
+                
+        if res_data and (res_data.get('code') == 200 or str(res_data.get('code')) == '200'):
+            otp_code = res_data.get('data')
+            conn = sqlite3.connect('database.db')
+            cursor = conn.cursor()
+            cursor.execute("UPDATE history SET otp = ?, status = 'Success' WHERE username = ? AND phone = ?", 
+                           (str(otp_code), session['username'], phone))
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "received", "otp": otp_code})
         time.sleep(5)
     return jsonify({"status": "timeout", "otp": None})
 
