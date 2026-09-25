@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALL OTP PANEL</title>
+    <script src="https://tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans flex flex-col items-center justify-center min-h-screen p-4">
+    <div class="bg-gray-800 p-8 rounded-xl shadow-2xl w-full max-w-md border border-gray-700">
+        <h1 class="text-2xl font-bold text-center mb-2 tracking-wide">ALL OTP</h1>
+        <p class="text-xs text-center text-gray-400 mb-6 uppercase tracking-widest">BY ACCSZONE</p>
+        
+        <div class="mb-4">
+            <label class="block text-xs font-semibold text-gray-400 mb-2 uppercase">Select Service</label>
+            <select id="pid" class="w-full bg-gray-700 border border-gray-600 rounded p-3 text-white focus:outline-none">
+                <option value="0544">Facebook New - 140 Cr</option>
+                <option value="9521">Facebook-M - 60 Cr</option>
+                <option value="8813">Facebook Single - 60 Cr</option>
+            </select>
+        </div>
+        
+        <button onclick="requestNumber()" class="w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold py-3 rounded-lg transition shadow-lg mt-2">Request Number</button>
+        
+        <div id="result" class="mt-6 hidden bg-gray-950 p-4 rounded-lg border border-gray-850 text-center">
+            <p class="text-gray-500 text-xs uppercase font-bold tracking-wider">Active Number</p>
+            <p id="number" class="text-xl font-bold text-green-400 my-2">--</p>
+            <p class="text-gray-500 text-xs uppercase font-bold tracking-wider mt-4">SMS Code</p>
+            <p id="otp" class="text-2xl font-black text-yellow-400 tracking-widest mt-1">Waiting...</p>
+        </div>
+    </div>
+
+    <script>
+        async function requestNumber() {
+            const pid = document.getElementById('pid').value;
+            document.getElementById('result').classList.remove('hidden');
+            document.getElementById('number').innerText = "Fetching Number...";
+            document.getElementById('otp').innerText = "Waiting...";
+            
+            const res = await fetch(`/api/get-number?pid=${pid}`);
+            const data = await res.json();
+            
+            if(data.status === "success") {
+                document.getElementById('number').innerText = data.number;
+                checkOTP(data.number, data.pid);
+            } else {
+                document.getElementById('number').innerText = "Error: " + (data.message || "Failed");
+            }
+        }
+
+        async function checkOTP(phone, pid) {
+            const res = await fetch(`/api/check-otp?phone=${phone}&pid=${pid}`);
+            const data = await res.json();
+            if(data.otp) {
+                document.getElementById('otp').innerText = data.otp;
+            } else {
+                document.getElementById('otp').innerText = "Timed Out / No SMS";
+            }
+        }
+    </script>
+</body>
+</html>
